@@ -236,7 +236,10 @@ export class PeerStorage extends Peer {
         const lp = this.toLocalPath(pathSrc);
         const key = `file-stat-${lp}`;
         const path = this.toStoragePath(lp);
-        const stat = statSrc ?? await Deno.stat(path);
+        const stat = statSrc ?? await Deno.stat(path).catch(() => null);
+        if (!stat) {
+            return false;
+        }
         if (!stat.isFile) {
             return false;
         }
@@ -252,7 +255,10 @@ export class PeerStorage extends Peer {
         // console.log(`RV:${last}`);
 
         const path = this.toStoragePath(lp);
-        const stat = await Deno.stat(path);
+        const stat = await Deno.stat(path).catch(() => null);
+        if (!stat) {
+            return false;
+        }
         if (!stat.isFile) {
             return false;
         }
