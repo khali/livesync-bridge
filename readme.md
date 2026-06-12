@@ -32,9 +32,12 @@ git clone --recursive https://github.com/vrtmrz/livesync-bridge
 3. Simply run like this.
 
 ```bash
-$ deno install
+$ deno install --allow-import
 $ deno task run
 ```
+
+`--allow-import` is required for fresh clones because this project imports a
+GitHub-hosted dependency during installation.
 
 Note: If you want to scan all storage and databases from the beginning, please run with `--reset`.
 
