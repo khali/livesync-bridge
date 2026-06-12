@@ -352,6 +352,9 @@ export class PeerStorage extends Peer {
         this.watcher = chokidar.watch(lP,
             {
                 ignoreInitial: !this.config.scanOfflineChanges,
+                usePolling: true,
+                interval: 1000,
+                binaryInterval: 3000,
                 ignored: this.config.excludePatterns?.length
                     ? (path: string) => {
                         const rel = relative(lP, path);
