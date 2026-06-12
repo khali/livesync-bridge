@@ -7,7 +7,10 @@ VOLUME /app/data
 
 COPY . .
 
-RUN deno install -A
+RUN deno install --allow-import
 
-CMD [ "deno", "task", "run" ]
+# Make Deno cache writable for non-root user (bridge runs as khali uid 1001)
+RUN chmod -R a+rwX /deno-dir/
+
+CMD [ "deno", "run", "-A", "main.ts" ]
 

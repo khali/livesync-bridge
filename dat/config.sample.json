@@ -48,7 +48,7 @@
                 "args": ["$filename", "$mode"]
             },
             "scanOfflineChanges": true,
-            "useChokidar": true
+            "useChokidar": false
         }
     ]
 }

@@ -14,13 +14,21 @@ import { scheduleTask } from "octagonal-wheels/concurrency/task";
 
 export class PeerStorage extends Peer {
     declare config: PeerStorageConf;
+    watcherRestarting = false;
 
 
     constructor(conf: PeerStorageConf, dispatcher: DispatchFun) {
         super(conf, dispatcher);
     }
 
+    isExcluded(path: string): boolean {
+        if (!this.config.excludePatterns?.length) return false;
+        const segments = path.split('/');
+        return segments.some(seg => this.config.excludePatterns!.includes(seg));
+    }
+
     async delete(pathSrc: string): Promise<boolean> {
+        if (this.isExcluded(pathSrc)) return false;
         const lp = this.toLocalPath(pathSrc);
         const path = this.toStoragePath(lp);
         if (await this.isRepeating(lp, false)) {
@@ -38,6 +46,7 @@ export class PeerStorage extends Peer {
         return true;
     }
     async put(pathSrc: string, data: FileData): Promise<boolean> {
+        if (this.isExcluded(pathSrc)) return false;
         const lp = this.toLocalPath(pathSrc);
         const path = this.toStoragePath(lp);
         if (await this.isRepeating(lp, data)) {
@@ -153,6 +162,31 @@ export class PeerStorage extends Peer {
     }
     watcher?: chokidar.FSWatcher;
 
+    formatWatchError(ex: unknown): string {
+        if (ex instanceof Error) {
+            return `${ex.name}: ${ex.message}`;
+        }
+        return `${ex}`;
+    }
+
+    async restartChokidarWatch(ex: unknown): Promise<void> {
+        if (this.watcherRestarting) {
+            this.normalLog(`Chokidar watcher restart already pending; suppressed error: ${this.formatWatchError(ex)}`, LOG_LEVEL_NOTICE);
+            return;
+        }
+        this.watcherRestarting = true;
+        this.normalLog(`Chokidar watcher failed; restarting in 1000ms: ${this.formatWatchError(ex)}`, LOG_LEVEL_NOTICE);
+        try {
+            await this.watcher?.close();
+        } catch (closeError) {
+            this.normalLog(`Chokidar watcher close failed during restart: ${this.formatWatchError(closeError)}`, LOG_LEVEL_NOTICE);
+        }
+        this.watcher = undefined;
+        await delay(1000);
+        this.watcherRestarting = false;
+        await this.start();
+    }
+
     async dispatch(pathSrc: string) {
         const lP = this.toStoragePath(this.toLocalPath("."));
         const path = this.toPosixPath(relative(lP, pathSrc));
@@ -231,7 +265,10 @@ export class PeerStorage extends Peer {
     watcherDeno?: Deno.FsWatcher;
 
     processFile(event: Deno.FsEvent) {
+        const lP = this.toStoragePath(this.toLocalPath("."));
         for (const path of event.paths) {
+            const rel = this.toPosixPath(relative(lP, path));
+            if (this.isExcluded(rel)) continue;
             const key = `${event.kind}-${path}`;
             // const key = path;
             scheduleTask(key, 100, async () => {
@@ -260,6 +297,7 @@ export class PeerStorage extends Peer {
             for await (const entry of walk(lP)) {
                 if (entry.isFile) {
                     const ePath = this.toPosixPath(relative(this.toLocalPath("."), entry.path));
+                    if (this.isExcluded(ePath)) continue;
                     if (await this.isChanged(ePath)) {
                         this.debugLog(`Offline changes detected: ${ePath}`);
                         await this.dispatch(entry.path);
@@ -267,13 +305,28 @@ export class PeerStorage extends Peer {
                 }
             }
         }
-        this.watcherDeno = Deno.watchFs(lP,
-            {
-                recursive: true,
-            });
+        while (true) {
+            try {
+                this.watcherDeno = Deno.watchFs(lP,
+                    {
+                        recursive: true,
+                    });
 
-        for await (const event of this.watcherDeno) {
-            this.processFile(event);
+                for await (const event of this.watcherDeno) {
+                    this.processFile(event);
+                }
+                this.watcherDeno = undefined;
+                return;
+            } catch (ex) {
+                this.normalLog(`Deno fs watcher failed; restarting in 1000ms: ${this.formatWatchError(ex)}`, LOG_LEVEL_NOTICE);
+                try {
+                    this.watcherDeno?.close();
+                } catch {
+                    // The watcher may already be closed after the failure.
+                }
+                this.watcherDeno = undefined;
+                await delay(1000);
+            }
         }
 
     }
@@ -293,11 +346,20 @@ export class PeerStorage extends Peer {
         this.watcher = chokidar.watch(lP,
             {
                 ignoreInitial: !this.config.scanOfflineChanges,
+                ignored: this.config.excludePatterns?.length
+                    ? (path: string) => {
+                        const rel = relative(lP, path);
+                        return rel.split('/').some(seg => this.config.excludePatterns!.includes(seg));
+                    }
+                    : undefined,
                 awaitWriteFinish: {
                     stabilityThreshold: 500,
                 },
             });
 
+        this.watcher.on("error", (ex) => {
+            void this.restartChokidarWatch(ex);
+        });
         this.watcher.on("change", async (path) => {
             const ePath = this.toPosixPath(relative(this.toLocalPath("."), path));
             if (!await this.isChanged(ePath)) {

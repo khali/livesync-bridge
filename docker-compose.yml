@@ -2,7 +2,23 @@ version: "2.1"
 services:
   bridge:
     build: .
+    container_name: soul-codes-livesync-bridge
+    user: "1001:1001"
+    mem_limit: 768m
+    memswap_limit: 768m
     volumes:
-      - ./data:/app/data
       - ./dat:/app/dat
+      - /opt/soul-codes/users/khali/workspace/obsidian-vault:/vault/khali
+    networks:
+      - soul-codes-network
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ls /proc/*/exe 2>/dev/null | xargs -I{} readlink {} 2>/dev/null | grep -q deno"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  soul-codes-network:
+    external: true

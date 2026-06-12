@@ -34,6 +34,9 @@
             "exclude": ["no-explicit-any", "ban-ts-comment"]
         }
     },
+    "compilerOptions": {
+        "noImplicitOverride": false
+    },
     "nodeModulesDir": "manual",
     "unstable": ["bare-node-builtins", "sloppy-imports", "byonm"]
 }
