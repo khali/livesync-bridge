@@ -4,6 +4,7 @@ services:
     build: .
     container_name: soul-codes-livesync-bridge
     user: "1001:1001"
+    cpus: 1.0
     mem_limit: 768m
     memswap_limit: 768m
     volumes:
