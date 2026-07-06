@@ -154,7 +154,18 @@ export class PeerCouchDB extends Peer {
         } else {
             this.normalLog(`Watch starting from ${this.man.since}`);
         }
-        this.man.beginWatch(async (entry) => {
+        this.man.beginWatch(async (entry, seq) => {
+            if (seq !== undefined) {
+                this.setSetting("since", `${seq}`);
+            }
+            if (entry.path.indexOf(":") !== -1) {
+                this.normalLog(`Skipped unresolved or prefixed remote path: ${entry.path}`, LOG_LEVEL_NOTICE);
+                return;
+            }
+            if (!entry.path.startsWith(baseDir)) {
+                this.normalLog(`Skipped remote path outside baseDir: ${entry.path}`, LOG_LEVEL_NOTICE);
+                return;
+            }
             const d = entry.type == "plain" ? entry.data : new Uint8Array(decodeBinary(entry.data));
             let path = entry.path.substring(baseDir.length);
             if (path.startsWith("/")) {
@@ -168,10 +179,6 @@ export class PeerCouchDB extends Peer {
                 this.sendLog(`${path} change detected`);
                 await this.dispatch(path, docData);
             }
-        }, (entry) => {
-            this.setSetting("since", this.man.since);
-            if (entry.path.indexOf(":") !== -1) return false;
-            return entry.path.startsWith(baseDir);
         });
     }
     async dispatch(path: string, data: FileData | false) {
